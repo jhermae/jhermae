@@ -1,0 +1,454 @@
+<html><head><base href="." />
+<meta charset="UTF-8">
+<title>Jherme's Bff - Classic & Campaign</title>
+<style>
+:root {
+    --pixel-size: 20px;
+}
+
+body {
+    margin: 0;
+    padding: 20px;
+    background: #1a1a1a;
+    color: #fff;
+    font-family: 'Press Start 2P', system-ui;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+#digitalRain {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    opacity: 0.3;
+}
+
+#game-container {
+    position: relative;
+    margin: 20px auto;
+}
+
+canvas {
+    border: 4px solid #c41e3a;
+    background: #000;
+}
+
+.menu {
+    text-align: center;
+    margin: 20px;
+}
+
+.btn {
+    background: #c41e3a;
+    border: 2px solid #00ff00;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    cursor: pointer;
+    font-family: 'Press Start 2P', system-ui;
+    transition: all 0.3s;
+}
+
+.pause-btn {
+    background: #c41e3a;
+    border: 2px solid #00ff00;
+    color: white;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'Press Start 2P', system-ui;
+    transition: all 0.3s;
+}
+
+.game-over {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.95);
+    padding: 40px;
+    border: 4px solid #c41e3a;
+    text-align: center;
+    display: none;
+    z-index: 1000;
+    animation: fadeIn 0.5s;
+    box-shadow: 0 0 20px rgba(196, 30, 58, 0.5);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translate(-50%, -60%); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.game-over h2 {
+    color: #c41e3a;
+    font-size: 32px;
+    margin-bottom: 20px;
+    animation: pulse 2s infinite;
+    text-shadow: 0 0 10px rgba(196, 30, 58, 0.5);
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.restart-btn {
+    background: #c41e3a;
+    border: 2px solid #00ff00;
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: 'Press Start 2P', system-ui;
+    transition: all 0.3s;
+}
+
+.restart-btn:hover {
+    background: #00ff00;
+    border-color: #c41e3a;
+    transform: scale(1.1);
+}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="digitalRain"></canvas>
+    <h1>Jherme's Bff</h1>
+    <div class="menu">
+        <button class="btn" id="classicBtn">Classic Mode</button>
+        <button class="btn" id="campaignBtn">Campaign Mode</button>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <div id="score">Score: 0</div>
+        <button class="pause-btn" id="pauseBtn">Pause</button>
+    </div>
+    <div id="level">Level: 1</div>
+    <div class="campaign-objective" id="objective"></div>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+    </div>
+
+    <div class="game-over" id="gameOver">
+        <h2>Game Over!</h2>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <p>Level Reached: <span id="finalLevel">1</span></p>
+        <button class="restart-btn" id="restartBtn">Play Again</button>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let lastUpdate = 0;
+const moveInterval = 150;
+
+let gameMode = null;
+let score = 0;
+let level = 1;
+let isPaused = false;
+let gameLoop;
+
+// Initialize snake
+let snakeBody = [
+    {x: 200, y: 200},
+    {x: 200, y: 220},
+    {x: 200, y: 240}
+];
+let direction = {x: 0, y: -1};
+let nextDirection = {x: 0, y: -1};
+
+// Food object
+let food = {
+    x: 0,
+    y: 0,
+    width: 20,
+    height: 20
+};
+
+// Event Listeners
+document.getElementById('classicBtn').addEventListener('click', () => startGame('classic'));
+document.getElementById('campaignBtn').addEventListener('click', () => startGame('campaign'));
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('restartBtn').addEventListener('click', restartGame);
+
+function drawCake(x, y) {
+    ctx.save();
+    // Base cake
+    ctx.fillStyle = '#ff9999';
+    ctx.fillRect(x, y, 20, 15);
+    
+    // Frosting
+    ctx.fillStyle = '#ffcce6';
+    ctx.fillRect(x, y, 20, 5);
+    
+    // Cherry
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath();
+    ctx.arc(x + 10, y - 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+function spawnFood() {
+    let validSpawn = false;
+    while (!validSpawn) {
+        food.x = Math.floor(Math.random() * (canvas.width / 20)) * 20;
+        food.y = Math.floor(Math.random() * (canvas.height / 20)) * 20;
+        
+        validSpawn = true;
+        for (let segment of snakeBody) {
+            if (segment.x === food.x && segment.y === food.y) {
+                validSpawn = false;
+                break;
+            }
+        }
+    }
+}
+
+function drawSnakeSegment(x, y, isHead) {
+    ctx.save();
+    
+    // Cake body
+    ctx.fillStyle = '#ff9999';
+    ctx.fillRect(x, y, 20, 15);
+    
+    // Frosting
+    ctx.fillStyle = '#ffcce6';
+    ctx.fillRect(x, y, 20, 5);
+    
+    if (isHead) {
+        // Cherry for head
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.arc(x + 10, y - 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    ctx.restore();
+}
+
+function drawSnake() {
+    snakeBody.forEach((segment, index) => {
+        drawSnakeSegment(segment.x, segment.y, index === 0);
+    });
+}
+
+function moveSnake(timestamp) {
+    if (!isPaused && timestamp - lastUpdate >= moveInterval) {
+        direction = {...nextDirection};
+        const head = {x: snakeBody[0].x + direction.x * 20, y: snakeBody[0].y + direction.y * 20};
+        
+        // Wall collision with wrap-around
+        if (head.x < 0) head.x = canvas.width - 20;
+        if (head.x >= canvas.width) head.x = 0;
+        if (head.y < 0) head.y = canvas.height - 20;
+        if (head.y >= canvas.height) head.y = 0;
+
+        // Check self collision before moving
+        for (let i = 1; i < snakeBody.length; i++) {
+            if (head.x === snakeBody[i].x && head.y === snakeBody[i].y) {
+                showGameOver();
+                return;
+            }
+        }
+
+        snakeBody.unshift(head);
+        
+        // Food collision
+        if (head.x === food.x && head.y === food.y) {
+            score += 10;
+            updateScore();
+            spawnFood();
+        } else {
+            snakeBody.pop();
+        }
+        
+        lastUpdate = timestamp;
+    }
+}
+
+function update(timestamp) {
+    if (!isPaused) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        moveSnake(timestamp);
+        drawSnake();
+        drawCake(food.x, food.y);
+    }
+    gameLoop = requestAnimationFrame(update);
+}
+
+document.addEventListener('keydown', (e) => {
+    switch(e.key) {
+        case 'ArrowUp':
+            if (direction.y !== 1) nextDirection = {x: 0, y: -1};
+            break;
+        case 'ArrowDown':
+            if (direction.y !== -1) nextDirection = {x: 0, y: 1};
+            break;
+        case 'ArrowLeft':
+            if (direction.x !== 1) nextDirection = {x: -1, y: 0};
+            break;
+        case 'ArrowRight':
+            if (direction.x !== -1) nextDirection = {x: 1, y: 0};
+            break;
+    }
+});
+
+function togglePause() {
+    isPaused = !isPaused;
+}
+
+function updateScore() {
+    document.getElementById('score').textContent = `Score: ${score}`;
+    if (score > level * 100) {
+        level++;
+        document.getElementById('level').textContent = `Level: ${level}`;
+    }
+}
+
+function showGameOver() {
+    const gameOverScreen = document.getElementById('gameOver');
+    const finalScoreSpan = document.getElementById('finalScore');
+    const finalLevelSpan = document.getElementById('finalLevel');
+    
+    // Stop any movement
+    isPaused = true;
+    
+    // Update final stats
+    finalScoreSpan.textContent = score;
+    finalLevelSpan.textContent = level;
+    
+    // Show game over screen with animation
+    gameOverScreen.style.display = 'block';
+    
+    // Fade effect on canvas
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw "GAME OVER" text on canvas
+    ctx.save();
+    ctx.shadowColor = '#c41e3a';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#c41e3a';
+    ctx.font = '40px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2);
+    ctx.restore();
+    
+    // Cancel any ongoing animation
+    if (gameLoop) {
+        cancelAnimationFrame(gameLoop);
+    }
+}
+
+function restartGame() {
+    // Hide game over screen
+    document.getElementById('gameOver').style.display = 'none';
+    
+    // Reset game state
+    resetGame();
+    
+    // Start new animation loop
+    if (gameLoop) {
+        cancelAnimationFrame(gameLoop);
+    }
+    gameLoop = requestAnimationFrame(update);
+}
+
+function resetGame() {
+    score = 0;
+    level = 1;
+    updateScore();
+    document.getElementById('level').textContent = `Level: ${level}`;
+    snakeBody = [
+        {x: 200, y: 200},
+        {x: 200, y: 220},
+        {x: 200, y: 240}
+    ];
+    direction = {x: 0, y: -1};
+    nextDirection = {x: 0, y: -1};
+    isPaused = false;
+    spawnFood();
+}
+
+function startGame(mode) {
+    gameMode = mode;
+    resetGame();
+    requestAnimationFrame(update);
+}
+
+// Digital rain effect
+const rainCanvas = document.getElementById('digitalRain');
+const rainCtx = rainCanvas.getContext('2d');
+
+function resizeCanvas() {
+    rainCanvas.width = window.innerWidth;
+    rainCanvas.height = window.innerHeight;
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const christmasChars = ['🎄', '🎅', '🎁', '⛄', '❄️'];
+const drops = [];
+
+class Drop {
+    constructor() {
+        this.x = Math.random() * rainCanvas.width;
+        this.y = Math.random() * rainCanvas.height;
+        this.speed = Math.random() * 2 + 1;
+        this.char = christmasChars[Math.floor(Math.random() * christmasChars.length)];
+    }
+
+    fall() {
+        if (!isPaused) {
+            this.y += this.speed;
+            if (this.y > rainCanvas.height) {
+                this.y = 0;
+                this.x = Math.random() * rainCanvas.width;
+                this.char = christmasChars[Math.floor(Math.random() * christmasChars.length)];
+            }
+        }
+    }
+}
+
+for (let i = 0; i < 50; i++) {
+    drops.push(new Drop());
+}
+
+function drawRain() {
+    rainCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    rainCtx.fillRect(0, 0, rainCanvas.width, rainCanvas.height);
+    
+    rainCtx.fillStyle = '#c41e3a';
+    rainCtx.font = '20px Arial';
+    
+    drops.forEach(drop => {
+        rainCtx.fillText(drop.char, drop.x, drop.y);
+        drop.fall();
+    });
+    
+    requestAnimationFrame(drawRain);
+}
+
+drawRain();
+spawnFood(); // Initial food spawn
+</script>
+</body>
+</html>
